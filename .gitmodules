@@ -1,0 +1,3 @@
+[submodule "brats2023_updated"]
+	path = brats2023_updated
+	url = ./brats2023_updated
