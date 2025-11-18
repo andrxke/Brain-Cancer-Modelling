@@ -3,5 +3,7 @@ matplotlib==3.5.2
 monai==1.2.0
 nibabel==4.0.1
 numpy==1.26.1
-scikit-image==0.19.3
+scikit-image
+pandas
+einops
 torch==1.12.0

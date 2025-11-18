@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+from models.vit import ViT
 
 # instance norm    
 class conv_block(nn.Module):
@@ -51,6 +52,22 @@ class U_Net3d(nn.Module):
         self.Conv6 = conv_block(ch_in=nf*8,ch_out1=nf*12,ch_out2=nf*12,k1=3,k2=3,s1=2,s2=1).to(device='cuda:0')
         self.Conv7 = conv_block(ch_in=nf*12,ch_out1=nf*16,ch_out2=nf*16,k1=3,k2=3,s1=2,s2=1).to(device='cuda:0')
 
+        # ViT at the bottleneck
+        # Assuming input size (128, 192, 128), bottleneck is (2, 3, 2)
+        self.ViT = ViT(
+            image_size=(2, 3, 2), 
+            patch_size=1, 
+            num_classes=0, # Not used
+            dim=nf*16, 
+            depth=4, 
+            heads=8, 
+            mlp_dim=nf*32, 
+            channels=nf*16,
+            dim_head=64,
+            dropout=0.1,
+            emb_dropout=0.1
+        ).to(device='cuda:0')
+
         self.Up6 = up_conv(ch_in=nf*16,ch_out=nf*12).to(device='cuda:0')
         self.Up_conv6 = conv_block(ch_in=nf*24, ch_out1=nf*12, ch_out2=nf*12,k1=3,k2=3,s1=1,s2=1).to(device='cuda:0')
         
@@ -92,6 +109,8 @@ class U_Net3d(nn.Module):
 
         x7 = self.Conv7(x6)
         
+        # Apply ViT
+        x7 = self.ViT(x7)
 
         # decoding + concat path
        
