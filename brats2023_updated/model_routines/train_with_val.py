@@ -5,6 +5,10 @@ from torch import optim
 import csv
 from monai.metrics import DiceMetric
 from sklearn.model_selection import train_test_split
+import time
+import matplotlib.pyplot as plt
+import pandas as pd
+import matplotlib.pyplot as plt
 
 from ..utils.model_utils import load_or_initialize_training, make_dataloader, exp_decay_learning_rate, compute_loss, train_one_epoch
 from ..utils.general_utils import seg_to_one_hot_channels, disjoint_to_overlapping, probs_to_preds
@@ -171,6 +175,9 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
 
             # Save training loss and validation loss and metrics.
             save_loss_and_metrics_csv(loss_and_metrics_path, epoch, average_epoch_loss, average_val_loss, mean_dice, eval_region_dice_scores)
+            
+            # Plot metrics
+            plot_metrics(loss_and_metrics_path, out_dir)
 
         print('Saving model checkpoint...')
         checkpoint = {
@@ -203,6 +210,43 @@ def save_loss_and_metrics_csv(pathname, epoch, tloss, vloss, mean_dice, eval_reg
         writer = csv.writer(csvfile)
         writer.writerow([epoch, tloss, vloss, mean_dice] + eval_region_scores)
 
+def plot_metrics(csv_path, out_dir):
+    """Plots training metrics from CSV file."""
+    try:
+        df = pd.read_csv(csv_path)
+        
+        # Create figure with 2 subplots
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        
+        # Plot Losses
+        ax1.plot(df['Epoch'], df['Training Loss'], label='Training Loss', marker='o')
+        ax1.plot(df['Epoch'], df['Validation Loss'], label='Validation Loss', marker='o')
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Loss')
+        ax1.set_title('Training and Validation Loss')
+        ax1.legend()
+        ax1.grid(True)
+        
+        # Plot Dice Scores
+        # Get all columns that start with "Dice" or are "Mean Dice"
+        dice_cols = [col for col in df.columns if 'Dice' in col]
+        
+        for col in dice_cols:
+            ax2.plot(df['Epoch'], df[col], label=col, marker='o')
+            
+        ax2.set_xlabel('Epoch')
+        ax2.set_ylabel('Dice Score')
+        ax2.set_title('Dice Scores')
+        ax2.legend()
+        ax2.grid(True)
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(out_dir, 'training_plots.png'))
+        plt.close()
+        print(f"Plots saved to {os.path.join(out_dir, 'training_plots.png')}")
+    except Exception as e:
+        print(f"Error plotting metrics: {e}")
+
 if __name__ == '__main__':
 
     from ..models import unet3d
@@ -217,6 +261,10 @@ if __name__ == '__main__':
     lr = 6e-5
     max_epoch = 20
     val_interval = 5
-    out_dir = '/home/andrek/KurtBraTS/debug/train_with_val'
+    out_dir = '/home/andrek/KurtBraTS/debug/train_with_vit'
 
+    # Train model and record time 
+    start_time = time.time()
     train_with_val(train_dir, val_dir, model, loss_functions, loss_weights, lr, max_epoch, val_interval=val_interval, out_dir=out_dir)
+    end_time = time.time()
+    print(f"Total training time: {end_time - start_time:.2f} seconds")

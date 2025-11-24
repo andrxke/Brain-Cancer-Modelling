@@ -32,8 +32,22 @@ def load_or_initialize_training(model, optimizer, latest_ckpt_path, train_with_v
         print('Training checkpoint found. Loading checkpoint...')
         checkpoint = torch.load(latest_ckpt_path, weights_only=False)
         epoch_start = checkpoint['epoch'] + 1
-        model.load_state_dict(checkpoint['model_sd'])
-        optimizer.load_state_dict(checkpoint['optim_sd'])
+        
+        # Load state dict with strict=False to allow for missing keys (e.g. new ViT module)
+        missing_keys, unexpected_keys = model.load_state_dict(checkpoint['model_sd'], strict=False)
+        
+        if missing_keys:
+            print(f"WARNING: Missing keys in checkpoint: {missing_keys}")
+        if unexpected_keys:
+            print(f"WARNING: Unexpected keys in checkpoint: {unexpected_keys}")
+            
+        try:
+            optimizer.load_state_dict(checkpoint['optim_sd'])
+        except ValueError as e:
+            print(f"WARNING: Could not load optimizer state dict: {e}")
+            print("Re-initializing optimizer from scratch.")
+            # We don't need to do anything else, as the optimizer was already initialized before this function
+            
         if train_with_val:
             best_vloss = checkpoint['vloss']
             best_dice = checkpoint['dice']

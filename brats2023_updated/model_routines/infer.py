@@ -6,6 +6,9 @@ from ..utils.general_utils import probs_to_preds, save_pred_as_nifti
 
 def infer(data_dir, ckpt_path, out_dir=None, batch_size=1, postprocess_function=None):
     """Uses trained model to make predictions on test data.
+        To run this script from command line, use: 
+        python -m brats2023_updated.model_routines.infer
+        from the KurtBraTS directory.
 
     Args:
         data_dir: Directory of test data.
@@ -24,7 +27,8 @@ def infer(data_dir, ckpt_path, out_dir=None, batch_size=1, postprocess_function=
         os.system(f'chmod a+rwx {preds_dir}')
 
     print(f"Loading model from {ckpt_path}...")
-    checkpoint = torch.load(ckpt_path)
+    # Modified weights_only to be false to load entire checkpoint dictionary due to PyTorch 2.6
+    checkpoint = torch.load(ckpt_path, weights_only=False)
 
     model = checkpoint['model']
     loss_functions = checkpoint['loss_functions']
@@ -80,11 +84,15 @@ def infer(data_dir, ckpt_path, out_dir=None, batch_size=1, postprocess_function=
 
 if __name__ == '__main__':
 
-    from ..processing.postprocess import rm_dust_fh, OLD_rm_dust_fh
+    from ..processing.postprocess import rm_dust_fh
 
-    data_dir = '/mmfs1/home/ehoney22/debug_data/test'
-    ckpt_path = '/mmfs1/home/ehoney22/debug/backup_ckpts/epoch20.pth.tar'
-    out_dir = '/mmfs1/home/ehoney22/debug'
+    # Directory of test data to run on
+    data_dir = '/home/andrek/KurtBraTS/data/dataset/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData'
+    # Path of trained model
+    ckpt_path = '/home/andrek/KurtBraTS/debug/train_with_vit/best_dice_ckpt.pth.tar'
+    # Directory in which to save predictions
+    out_dir = '/home/andrek/KurtBraTS/data/dataset/'
+
     postprocess_function = rm_dust_fh
 
     infer(data_dir, ckpt_path, out_dir=out_dir, postprocess_function=postprocess_function)

@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from models.vit import ViT
+from .vit import ViT
 
 # instance norm    
 class conv_block(nn.Module):
