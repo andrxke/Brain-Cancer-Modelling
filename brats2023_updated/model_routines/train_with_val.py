@@ -4,6 +4,7 @@ import torch
 from torch import optim
 import csv
 from monai.metrics import DiceMetric
+from monai.losses import DiceLoss
 from sklearn.model_selection import train_test_split
 import time
 import matplotlib.pyplot as plt
@@ -13,7 +14,7 @@ import matplotlib.pyplot as plt
 from ..utils.model_utils import load_or_initialize_training, make_dataloader, exp_decay_learning_rate, compute_loss, train_one_epoch
 from ..utils.general_utils import seg_to_one_hot_channels, disjoint_to_overlapping, probs_to_preds
 
-def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_weights, init_lr, max_epoch, training_regions='overlapping', eval_regions='overlapping', out_dir=None, decay_rate=0.995, backup_interval=10, val_interval=10, batch_size=1):
+def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_weights, init_lr, max_epoch, training_regions='overlapping', eval_regions='overlapping', out_dir=None, decay_rate=0.995, backup_interval=10, val_interval=10, batch_size=1, patience=20):
     """Runs training routine with validation on separate validation set.
 
     Args:
@@ -31,6 +32,7 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
         backup_interval: How often to save a backup checkpoint. Defaults to 10.
         val_interval: How often to perform validation. Defaults to 10.
         batch_size: Batch size of dataloader. Defaults to 1.
+        patience: Number of validation intervals to wait for improvement before early stopping. Defaults to 20.
     """
     
     # Set up directories and paths.
@@ -53,9 +55,14 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
         eval_region_names = ['NCR', 'ED', 'ET']
     dice_eval_region_names = [f'Dice {eval_region}' for eval_region in eval_region_names]
     
-    with open(loss_and_metrics_path, mode='w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['Epoch', 'Training Loss', 'Validation Loss', 'Mean Dice'] + dice_eval_region_names)
+    # Check if we are resuming from a checkpoint and the log file exists
+    if os.path.exists(latest_ckpt_path) and os.path.exists(loss_and_metrics_path):
+        print(f"Resuming training. Appending to existing log file: {loss_and_metrics_path}")
+    else:
+        # If not resuming or log file missing, start fresh
+        with open(loss_and_metrics_path, mode='w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['Epoch', 'Training Loss', 'Validation Loss', 'Mean Dice'] + dice_eval_region_names)
 
     print("---------------------------------------------------")
     print(f"TRAINING WITH VALIDATION SUMMARY")
@@ -73,6 +80,7 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
     print(f"Backup interval: {backup_interval}")
     print(f"Validation interval: {val_interval}")
     print(f"Batch size: {batch_size}")
+    print(f"Patience: {patience}")
     print("---------------------------------------------------")
 
     optimizer = optim.Adam(model.parameters(), lr=init_lr, weight_decay=0, amsgrad=True)
@@ -83,6 +91,8 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
     # Create dataloaders
     train_loader = make_dataloader(train_data_dir, batch_size=batch_size, shuffle=True, mode='train')
     val_loader = make_dataloader(val_data_dir, batch_size=batch_size, shuffle=False, mode='val')
+
+    epochs_since_improvement = 0
 
     print('Training starts.')
     for epoch in range(epoch_start, max_epoch+1):
@@ -107,6 +117,7 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
             # Recommend use MONAI metrics set-up for different metrics (Cumulative Iterative)
             dice_metric = DiceMetric(include_background=True, reduction="mean_batch")
 
+            # Validation block
             with torch.no_grad():
                 for _, imgs, seg in val_loader:
 
@@ -134,7 +145,9 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
                     val_loss = compute_loss(output, seg_train, loss_functions, loss_weights)
                     val_loss_vals.append(val_loss.detach().cpu())
 
-                    preds = probs_to_preds(output, training_regions)
+                    # CHANGED: Apply sigmoid because model now returns logits.
+                    # Conver the models' raw probabilities into hard predictions
+                    preds = probs_to_preds(torch.sigmoid(output), training_regions)
 
                     if eval_regions == 'overlapping':
                         # eval_region_names = ['WT', 'TC', 'ET']
@@ -168,6 +181,9 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
             if average_val_loss < best_vloss:
                 best_vloss = average_val_loss
                 update_vloss = True
+                epochs_since_improvement = 0
+            else:
+                epochs_since_improvement += 1
 
             if mean_dice > best_dice:
                 best_dice = mean_dice
@@ -178,6 +194,10 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
             
             # Plot metrics
             plot_metrics(loss_and_metrics_path, out_dir)
+
+            if epochs_since_improvement >= patience:
+                print(f'Early stopping triggered. Validation loss has not improved for {patience} validation intervals.')
+                break
 
         print('Saving model checkpoint...')
         checkpoint = {
@@ -256,10 +276,13 @@ if __name__ == '__main__':
     val_dir = '/home/andrek/KurtBraTS/data/dataset/validation_split'  # Use the created validation split
     
     model = unet3d.U_Net3d()
-    loss_functions = [nn.MSELoss(), nn.CrossEntropyLoss()]
-    loss_weights = [0.4, 0.7]
-    lr = 6e-5
-    max_epoch = 20
+    # CHANGED: Switched to DiceLoss (sigmoid=True) and BCEWithLogitsLoss. 
+    # Previous MSE+CrossEntropy on Sigmoid outputs resulted in vanishing gradients and incorrect loss calculation (CE loss was 0).
+    loss_functions = [DiceLoss(include_background=True, sigmoid=True), nn.BCEWithLogitsLoss()]
+    loss_weights = [1.0, 1.0]
+    # CHANGED: Increased LR to 1e-4 for faster convergence with new loss landscape.
+    lr = 1e-4
+    max_epoch = 200
     val_interval = 5
     out_dir = '/home/andrek/KurtBraTS/debug/train_with_vit'
 

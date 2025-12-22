@@ -71,7 +71,8 @@ def infer(data_dir, ckpt_path, out_dir=None, batch_size=1, postprocess_function=
 
             x_in = torch.cat(imgs, dim=1) # x_in is B4HWD
             output = model(x_in)
-            output = output.float()
+            # CHANGED: Apply sigmoid manually as model now returns logits.
+            output = torch.sigmoid(output.float())
 
             preds = probs_to_preds(output, training_regions)
             # preds is B3HWD - each channel is one-hot encoding of a disjoint region

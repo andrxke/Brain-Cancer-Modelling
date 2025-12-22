@@ -89,7 +89,6 @@ class U_Net3d(nn.Module):
         self.Up_conv1 = conv_block(ch_in=nf*4, ch_out1=nf*2,ch_out2=nf*2,k1=3,k2=3,s1=1,s2=1).to(device='cuda:0')
         self.Conv_1x11 = nn.Conv3d(nf*2,output_ch,kernel_size=1,stride=1,padding=0).to(device='cuda:0')
         
-        self.Sig =nn.Sigmoid().to(device='cuda:0')
 
 
     def forward(self,x):
@@ -130,20 +129,23 @@ class U_Net3d(nn.Module):
         d3 = torch.cat((x3.to(device='cuda:0'),d3),dim=1)
         d3 = self.Up_conv3(d3)
         d3 = self.Conv_1x13(d3)
-        d3 = self.Sig(d3)
+        d3 = self.Conv_1x13(d3)
+        # CHANGED: Removed Sigmoid.
+        
         
         d2 = self.Up2(d3)
         d2 = torch.cat((x2.to(device='cuda:0'),d2),dim=1)
         d2 = self.Up_conv2(d2)
         d2 = self.Conv_1x12(d2)
-        d2 = self.Sig(d2)
+        d2 = self.Conv_1x12(d2)
+        # CHANGED: Removed Sigmoid.
+        
         
         d1 = self.Up1(d2)
         d1 = torch.cat((x1.to(device='cuda:0'),d1),dim=1)
         d1 = self.Up_conv1(d1)
         d1 = self.Conv_1x11(d1)
-        d1 = self.Sig(d1)
-
+        # CHANGED: Removed self.Sig(d1). Returning logits directly for numerical stability with BCEWithLogitsLoss.
         return d1.to(device='cuda:0')
     
     def __str__(self):
