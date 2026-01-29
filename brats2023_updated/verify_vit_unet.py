@@ -25,12 +25,19 @@ def verify():
     
     try:
         print("Running forward pass...")
-        output = model(input_tensor)
-        print(f"Output shape: {output.shape}")
+        outputs = model(input_tensor)
+        if isinstance(outputs, list):
+            print(f"Output is a list of length {len(outputs)}")
+            for i, out in enumerate(outputs):
+                print(f"Output {i} shape: {out.shape}")
+            output = outputs[0]
+        else:
+            output = outputs
+            print(f"Output shape: {output.shape}")
         
         expected_shape = (1, 3, 128, 192, 128)
         if output.shape == expected_shape:
-            print("Verification SUCCESS: Output shape matches expected shape.")
+            print("Verification SUCCESS: Main output shape matches expected shape.")
         else:
             print(f"Verification FAILED: Expected {expected_shape}, got {output.shape}")
             sys.exit(1)

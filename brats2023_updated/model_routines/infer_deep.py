@@ -6,9 +6,9 @@ from ..utils.model_utils import make_dataloader
 from ..utils.general_utils import probs_to_preds, save_pred_as_nifti
 
 def infer(data_dir, ckpt_path, out_dir=None, batch_size=1, postprocess_function=None):
-    """Uses trained model to make predictions on test data.
+    """Uses trained model to make predictions on test data (Deep Supervision version).
         To run this script from command line, use: 
-        python -m brats2023_updated.model_routines.infer
+        python -m brats2023_updated.model_routines.infer_deep
         from the KurtBraTS directory.
 
     Args:
@@ -22,7 +22,7 @@ def infer(data_dir, ckpt_path, out_dir=None, batch_size=1, postprocess_function=
     # Set up directories and paths.
     if out_dir is None:
         out_dir = os.getcwd()
-    preds_dir = os.path.join(out_dir, 'preds' + str(date.today()))
+    preds_dir = os.path.join(out_dir, 'preds_deep_' + str(date.today()))
     if not os.path.exists(preds_dir):
         os.makedirs(preds_dir)
         os.system(f'chmod a+rwx {preds_dir}')
@@ -77,7 +77,7 @@ def infer(data_dir, ckpt_path, out_dir=None, batch_size=1, postprocess_function=
             else:
                 output = outputs
 
-            # CHANGED: Apply sigmoid manually as model now returns logits.
+            # Apply sigmoid manually as model now returns logits.
             output = torch.sigmoid(output.float())
 
             preds = probs_to_preds(output, training_regions)

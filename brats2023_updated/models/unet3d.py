@@ -109,7 +109,7 @@ class U_Net3d(nn.Module):
         x7 = self.Conv7(x6)
         
         # Apply ViT
-        x7 = self.ViT(x7)
+        x7 = x7 + self.ViT(x7)
 
         # decoding + concat path
        
@@ -129,7 +129,7 @@ class U_Net3d(nn.Module):
         d3 = torch.cat((x3.to(device='cuda:0'),d3),dim=1)
         d3 = self.Up_conv3(d3)
         d3 = self.Conv_1x13(d3)
-        d3 = self.Conv_1x13(d3)
+
         # CHANGED: Removed Sigmoid.
         
         
@@ -137,7 +137,7 @@ class U_Net3d(nn.Module):
         d2 = torch.cat((x2.to(device='cuda:0'),d2),dim=1)
         d2 = self.Up_conv2(d2)
         d2 = self.Conv_1x12(d2)
-        d2 = self.Conv_1x12(d2)
+
         # CHANGED: Removed Sigmoid.
         
         
@@ -146,7 +146,7 @@ class U_Net3d(nn.Module):
         d1 = self.Up_conv1(d1)
         d1 = self.Conv_1x11(d1)
         # CHANGED: Removed self.Sig(d1). Returning logits directly for numerical stability with BCEWithLogitsLoss.
-        return d1.to(device='cuda:0')
+        return [d1.to(device='cuda:0'), d2.to(device='cuda:0'), d3.to(device='cuda:0')]
     
     def __str__(self):
         num_params = sum(p.numel() for p in self.parameters())

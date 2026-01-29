@@ -8,7 +8,7 @@ from ..utils.general_utils import probs_to_preds, save_pred_as_nifti
 def infer(data_dir, ckpt_path, out_dir=None, batch_size=1, postprocess_function=None):
     """Uses trained model to make predictions on test data.
         To run this script from command line, use: 
-        python -m brats2023_updated.model_routines.infer
+        python -m brats2023_updated.model_routines.infer_val_loss
         from the KurtBraTS directory.
 
     Args:
@@ -22,7 +22,10 @@ def infer(data_dir, ckpt_path, out_dir=None, batch_size=1, postprocess_function=
     # Set up directories and paths.
     if out_dir is None:
         out_dir = os.getcwd()
-    preds_dir = os.path.join(out_dir, 'preds' + str(date.today()))
+    
+    # CHANGED: Use infer_validation as the folder name
+    preds_dir = os.path.join(out_dir, 'infer_validation' + str(date.today()))
+    
     if not os.path.exists(preds_dir):
         os.makedirs(preds_dir)
         os.system(f'chmod a+rwx {preds_dir}')
@@ -96,7 +99,8 @@ if __name__ == '__main__':
     # Directory of test data to run on
     data_dir = '/home/andrek/KurtBraTS/data/dataset/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData'
     # Path of trained model
-    ckpt_path = '/home/andrek/KurtBraTS/debug/train_with_vit/best_dice_ckpt.pth.tar'
+    # CHANGED: Use best_vloss_ckpt.pth.tar
+    ckpt_path = '/home/andrek/KurtBraTS/debug/train_with_vit/best_vloss_ckpt.pth.tar'
     # Directory in which to save predictions
     out_dir = '/home/andrek/KurtBraTS/data/dataset/'
 

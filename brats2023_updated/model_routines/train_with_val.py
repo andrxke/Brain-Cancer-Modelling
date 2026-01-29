@@ -2,6 +2,7 @@ import os
 import numpy as np
 import torch 
 from torch import optim
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 import csv
 from monai.metrics import DiceMetric
 from monai.losses import DiceLoss
@@ -83,7 +84,13 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
     print(f"Patience: {patience}")
     print("---------------------------------------------------")
 
-    optimizer = optim.Adam(model.parameters(), lr=init_lr, weight_decay=0, amsgrad=True)
+    # Changed to AdamW for better regularization with ViT
+    optimizer = optim.AdamW(model.parameters(), lr=init_lr, weight_decay=1e-5, amsgrad=True)
+    
+    # Cosine Annealing Scheduler
+    # T_0: Number of iterations for the first restart.
+    # T_mult: A factor increases T_i after a restart.
+    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2)
 
     # Check if training for first time or continuing from a saved checkpoint.
     epoch_start, best_vloss, best_dice = load_or_initialize_training(model, optimizer, latest_ckpt_path, train_with_val=True)
@@ -98,7 +105,11 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
     for epoch in range(epoch_start, max_epoch+1):
         print(f'Starting epoch {epoch}...')
 
-        exp_decay_learning_rate(optimizer, epoch, init_lr, decay_rate)
+        # Custom scheduler replaced by PyTorch scheduler
+        # exp_decay_learning_rate(optimizer, epoch, init_lr, decay_rate)
+        # Step the scheduler at the start of epoch (or end, depending on preference, but usually after optimizer step if it was per-batch, here it is per epoch)
+        # CosineAnnealingWarmRestarts usually steps per batch or per epoch. Let's do per epoch.
+        scheduler.step(epoch + epoch_start)
 
         average_epoch_loss = train_one_epoch(model, optimizer, train_loader, loss_functions, loss_weights, training_regions)
 
@@ -138,7 +149,12 @@ def train_with_val(train_data_dir, val_data_dir, model, loss_functions, loss_wei
                         # seg_train is B3HWD - each channel is one-hot encoding of a disjoint region
 
                     x_in = torch.cat(imgs, dim=1) # x_in is B4HWD
-                    output = model(x_in)
+                    outputs = model(x_in)
+                    if isinstance(outputs, list):
+                        output = outputs[0] # Take the final resolution output for validation
+                    else:
+                        output = outputs
+                    
                     output = output.float()
 
                     # Compute weighted loss, summed across each training region.
