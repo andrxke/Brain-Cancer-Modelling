@@ -4,6 +4,14 @@ import nibabel as nib
 from ..processing.preprocess import znorm_rescale, center_crop
 import numpy as np
 import torch
+from monai.transforms import (
+    Compose,
+    RandFlipd,
+    RandScaleIntensityd,
+    RandShiftIntensityd,
+    RandGaussianNoised,
+    RandGaussianSmoothd,
+)
 
 class BratsDataset(Dataset):
     """Dataset class for loading BraTS training and test data.
@@ -17,6 +25,30 @@ class BratsDataset(Dataset):
         self.data_dir = data_dir
         self.subject_list = os.listdir(data_dir)
         self.mode = mode
+
+        # Define training augmentation transforms.
+        # Uses MONAI dictionary-based transforms so the same spatial transform
+        # is applied consistently to all image modalities AND the segmentation.
+        if self.mode == 'train':
+            image_keys = ['image']
+            all_keys = ['image', 'seg']
+
+            self.train_transforms = Compose([
+                # Spatial augmentations (applied to both image and seg)
+                RandFlipd(keys=all_keys, spatial_axis=0, prob=0.5),
+                RandFlipd(keys=all_keys, spatial_axis=1, prob=0.5),
+                RandFlipd(keys=all_keys, spatial_axis=2, prob=0.5),
+
+                # Intensity augmentations (applied to image only, not seg)
+                # Reduced probabilities and magnitudes for better convergence
+                RandScaleIntensityd(keys=image_keys, factors=0.05, prob=0.3),
+                RandShiftIntensityd(keys=image_keys, offsets=0.05, prob=0.3),
+                RandGaussianNoised(keys=image_keys, std=0.05, prob=0.1),
+                RandGaussianSmoothd(keys=image_keys, prob=0.1,
+                                    sigma_x=(0.5, 1.15),
+                                    sigma_y=(0.5, 1.15),
+                                    sigma_z=(0.5, 1.15)),
+            ])
 
     def __len__(self):
         return len(self.subject_list)
@@ -76,28 +108,40 @@ class BratsDataset(Dataset):
         # Perform center crop.
         imgs = [center_crop(img) for img in imgs]
 
-        imgs = [x[None, ...] for x in imgs]
-        imgs = [np.ascontiguousarray(x, dtype=np.float32) for x in imgs]
-
-        # Convert to torch tensors.
-        imgs = [torch.from_numpy(x) for x in imgs]
-
-        # If train or val mode, process segmentation similarly (if available).
-        if self.mode == 'train':
+        if self.mode in ('train', 'val') and seg is not None:
             seg = center_crop(seg)
-            seg = seg[None, ...]
-            seg = np.ascontiguousarray(seg)
-            seg = torch.from_numpy(seg)
 
-            return subject_name, imgs, seg
+        # Stack all 4 modalities into a single (4, H, W, D) array for augmentation.
+        imgs_stacked = np.stack(imgs, axis=0).astype(np.float32)  # (4, H, W, D)
+
+        # Apply training augmentations.
+        if self.mode == 'train':
+            seg = seg[None, ...].astype(np.float32)  # (1, H, W, D)
+            data_dict = {'image': imgs_stacked, 'seg': seg}
+            data_dict = self.train_transforms(data_dict)
+            imgs_stacked = data_dict['image']
+            seg = data_dict['seg']
+
+            # Convert to torch tensors.
+            if not isinstance(imgs_stacked, torch.Tensor):
+                imgs_stacked = torch.from_numpy(np.ascontiguousarray(imgs_stacked))
+            if not isinstance(seg, torch.Tensor):
+                seg = torch.from_numpy(np.ascontiguousarray(seg))
+
+            # Split back into list of individual modality tensors (each 1HWD).
+            imgs_out = [imgs_stacked[i:i+1] for i in range(4)]
+            return subject_name, imgs_out, seg
+
         elif self.mode == 'val':
+            imgs_out = [torch.from_numpy(np.ascontiguousarray(imgs_stacked[i:i+1])) for i in range(4)]
             if seg is not None:
-                seg = center_crop(seg)
                 seg = seg[None, ...]
                 seg = np.ascontiguousarray(seg)
                 seg = torch.from_numpy(seg)
-                return subject_name, imgs, seg
+                return subject_name, imgs_out, seg
             else:
-                return subject_name, imgs, None
+                return subject_name, imgs_out, None
+
         elif self.mode == 'test':
-            return subject_name, imgs
+            imgs_out = [torch.from_numpy(np.ascontiguousarray(imgs_stacked[i:i+1])) for i in range(4)]
+            return subject_name, imgs_out

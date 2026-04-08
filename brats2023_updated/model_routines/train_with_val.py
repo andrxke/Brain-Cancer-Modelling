@@ -287,17 +287,17 @@ if __name__ == '__main__':
 
     from ..models import unet3d
     import torch.nn as nn
+    from monai.losses import HausdorffDTLoss
 
     train_dir = '/home/andrek/KurtBraTS/data/dataset/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData'
     val_dir = '/home/andrek/KurtBraTS/data/dataset/validation_split'  # Use the created validation split
     
     model = unet3d.U_Net3d()
-    # CHANGED: Switched to DiceLoss (sigmoid=True) and BCEWithLogitsLoss. 
-    # Previous MSE+CrossEntropy on Sigmoid outputs resulted in vanishing gradients and incorrect loss calculation (CE loss was 0).
-    loss_functions = [DiceLoss(include_background=True, sigmoid=True), nn.BCEWithLogitsLoss()]
-    loss_weights = [1.0, 1.0]
-    # CHANGED: Increased LR to 1e-4 for faster convergence with new loss landscape.
-    lr = 1e-4
+    # CHANGED: Added HausdorffDTLoss as a third loss to improve boundary segmentation.
+    loss_functions = [DiceLoss(include_background=True, sigmoid=True), nn.BCEWithLogitsLoss(), HausdorffDTLoss(sigmoid=True)]
+    loss_weights = [1.0, 1.0, 0.5]
+    # CHANGED: Lowered LR to 5e-5 for smoother convergence with data augmentation.
+    lr = 5e-5
     max_epoch = 200
     val_interval = 5
     out_dir = '/home/andrek/KurtBraTS/debug/train_with_vit'
