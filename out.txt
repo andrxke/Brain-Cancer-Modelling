@@ -1,0 +1,23 @@
+/home/andrek/miniconda3/lib/python3.13/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+Loading LoRA fine-tuned weights: brats2023_updated/sam/sam3_lora_best.pt
+Replaced 36 nn.MultiheadAttention modules with MultiheadAttentionLoRA
+Applied LoRA to 383 modules:
+  - backbone.vision_backbone.trunk.blocks.0.attn.qkv
+  - backbone.vision_backbone.trunk.blocks.0.attn.proj
+  - backbone.vision_backbone.trunk.blocks.0.mlp.fc1
+  - backbone.vision_backbone.trunk.blocks.0.mlp.fc2
+  - backbone.vision_backbone.trunk.blocks.1.attn.qkv
+  - backbone.vision_backbone.trunk.blocks.1.attn.proj
+  - backbone.vision_backbone.trunk.blocks.1.mlp.fc1
+  - backbone.vision_backbone.trunk.blocks.1.mlp.fc2
+  - backbone.vision_backbone.trunk.blocks.2.attn.qkv
+  - backbone.vision_backbone.trunk.blocks.2.attn.proj
+  - backbone.vision_backbone.trunk.blocks.2.mlp.fc1
+  - backbone.vision_backbone.trunk.blocks.2.mlp.fc2
+  - backbone.vision_backbone.trunk.blocks.3.attn.qkv
+  - backbone.vision_backbone.trunk.blocks.3.attn.proj
+  - backbone.vision_backbone.trunk.blocks.3.mlp.fc1
+  ... and 368 more
+Loaded 766 LoRA weights from brats2023_updated/sam/sam3_lora_best.pt
+Total params: 2012, CPU: 0, GPU: 2012
