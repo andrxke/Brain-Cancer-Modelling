@@ -75,4 +75,4 @@ if __name__ == '__main__':
     train_dir = '/home/andrek/KurtBraTS/data/dataset/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData'
     val_dir = '/home/andrek/KurtBraTS/data/dataset/validation_split'
     
-    create_validation_split(train_dir, val_dir)
+    create_validation_split(train_dir, val_dir, test_size=0.2)

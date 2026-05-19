@@ -32,8 +32,22 @@ def load_or_initialize_training(model, optimizer, latest_ckpt_path, train_with_v
         print('Training checkpoint found. Loading checkpoint...')
         checkpoint = torch.load(latest_ckpt_path, weights_only=False)
         epoch_start = checkpoint['epoch'] + 1
-        model.load_state_dict(checkpoint['model_sd'])
-        optimizer.load_state_dict(checkpoint['optim_sd'])
+        
+        # Load state dict with strict=False to allow for missing keys (e.g. new ViT module)
+        missing_keys, unexpected_keys = model.load_state_dict(checkpoint['model_sd'], strict=False)
+        
+        if missing_keys:
+            print(f"WARNING: Missing keys in checkpoint: {missing_keys}")
+        if unexpected_keys:
+            print(f"WARNING: Unexpected keys in checkpoint: {unexpected_keys}")
+            
+        try:
+            optimizer.load_state_dict(checkpoint['optim_sd'])
+        except ValueError as e:
+            print(f"WARNING: Could not load optimizer state dict: {e}")
+            print("Re-initializing optimizer from scratch.")
+            # We don't need to do anything else, as the optimizer was already initialized before this function
+            
         if train_with_val:
             best_vloss = checkpoint['vloss']
             best_dice = checkpoint['dice']
@@ -55,16 +69,39 @@ def exp_decay_learning_rate(optimizer, epoch, init_lr, decay_rate):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def compute_loss(output, seg, loss_functs, loss_weights):
-    """Computes weighted loss between model output and ground truth, summed across each region."""
-    loss = 0.
-    for n, loss_function in enumerate(loss_functs):      
-        temp = 0
-        for i in range(3):
-            temp += loss_function(output[:,i:i+1].cuda(), seg[:,i:i+1].cuda())
+def compute_loss(outputs, seg, loss_functs, loss_weights):
+    """Computes weighted loss between model output and ground truth, summed across each region.
+       Supports Deep Supervision if outputs is a list.
+    """
+    if not isinstance(outputs, list):
+        outputs = [outputs]
 
-        loss += temp * loss_weights[n]
-    return loss
+    total_loss = 0.
+    # Deep supervision weights: 1.0 for final, 0.5 for d2, 0.25 for d3
+    ds_weights = [0.5 ** i for i in range(len(outputs))]
+    
+    for i, output in enumerate(outputs):
+        # Downsample seg to match output resolution if needed
+        if output.shape[2:] != seg.shape[2:]:
+            # seg is B3HWD
+            current_seg = torch.nn.functional.interpolate(seg.float(), size=output.shape[2:], mode='nearest')
+        else:
+            current_seg = seg.float()
+
+        # Ensure target is on the same device as output
+        current_seg = current_seg.to(output.device)
+
+        scale_loss = 0.
+        for n, loss_function in enumerate(loss_functs):      
+            temp = 0
+            for c in range(3): # 3 channels (WT, TC, ET)
+                temp += loss_function(output[:,c:c+1], current_seg[:,c:c+1])
+    
+            scale_loss += temp * loss_weights[n]
+        
+        total_loss += scale_loss * ds_weights[i]
+
+    return total_loss
 
 def train_one_epoch(model, optimizer, train_loader, loss_functions, loss_weights, training_regions):
     """Performs one training loop of model according to given optimizer, loss functions and associated weights.
@@ -98,11 +135,14 @@ def train_one_epoch(model, optimizer, train_loader, loss_functions, loss_weights
             # seg is B3HWD - each channel is one-hot encoding of an overlapping region
 
         x_in = torch.cat(imgs, dim=1) # x_in is B4HWD
-        output = model(x_in)
-        output = output.float()
+        outputs = model(x_in)
+        if isinstance(outputs, list):
+            outputs = [o.float() for o in outputs]
+        else:
+            outputs = outputs.float()
 
         # Compute weighted loss, summed across each region.
-        loss = compute_loss(output, seg, loss_functions, loss_weights)
+        loss = compute_loss(outputs, seg, loss_functions, loss_weights)
 
         optimizer.zero_grad()
         loss.backward()

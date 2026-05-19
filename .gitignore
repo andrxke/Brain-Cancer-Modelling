@@ -1,1 +1,9 @@
 /data
+*.zip
+/debug
+/models
+*.pt
+*.pth
+*.pth.tar
+*.log
+/backup_ckpts

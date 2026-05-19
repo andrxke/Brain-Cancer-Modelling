@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+from .vit import ViT
 
 # instance norm    
 class conv_block(nn.Module):
@@ -51,6 +52,22 @@ class U_Net3d(nn.Module):
         self.Conv6 = conv_block(ch_in=nf*8,ch_out1=nf*12,ch_out2=nf*12,k1=3,k2=3,s1=2,s2=1).to(device='cuda:0')
         self.Conv7 = conv_block(ch_in=nf*12,ch_out1=nf*16,ch_out2=nf*16,k1=3,k2=3,s1=2,s2=1).to(device='cuda:0')
 
+        # ViT at the bottleneck
+        # Assuming input size (128, 192, 128), bottleneck is (2, 3, 2)
+        self.ViT = ViT(
+            image_size=(2, 3, 2), 
+            patch_size=1, 
+            num_classes=0, # Not used
+            dim=nf*16, 
+            depth=4, 
+            heads=8, 
+            mlp_dim=nf*32, 
+            channels=nf*16,
+            dim_head=64,
+            dropout=0.1,
+            emb_dropout=0.1
+        ).to(device='cuda:0')
+
         self.Up6 = up_conv(ch_in=nf*16,ch_out=nf*12).to(device='cuda:0')
         self.Up_conv6 = conv_block(ch_in=nf*24, ch_out1=nf*12, ch_out2=nf*12,k1=3,k2=3,s1=1,s2=1).to(device='cuda:0')
         
@@ -72,7 +89,6 @@ class U_Net3d(nn.Module):
         self.Up_conv1 = conv_block(ch_in=nf*4, ch_out1=nf*2,ch_out2=nf*2,k1=3,k2=3,s1=1,s2=1).to(device='cuda:0')
         self.Conv_1x11 = nn.Conv3d(nf*2,output_ch,kernel_size=1,stride=1,padding=0).to(device='cuda:0')
         
-        self.Sig =nn.Sigmoid().to(device='cuda:0')
 
 
     def forward(self,x):
@@ -92,6 +108,8 @@ class U_Net3d(nn.Module):
 
         x7 = self.Conv7(x6)
         
+        # Apply ViT
+        x7 = x7 + self.ViT(x7)
 
         # decoding + concat path
        
@@ -111,21 +129,24 @@ class U_Net3d(nn.Module):
         d3 = torch.cat((x3.to(device='cuda:0'),d3),dim=1)
         d3 = self.Up_conv3(d3)
         d3 = self.Conv_1x13(d3)
-        d3 = self.Sig(d3)
+
+        # CHANGED: Removed Sigmoid.
+        
         
         d2 = self.Up2(d3)
         d2 = torch.cat((x2.to(device='cuda:0'),d2),dim=1)
         d2 = self.Up_conv2(d2)
         d2 = self.Conv_1x12(d2)
-        d2 = self.Sig(d2)
+
+        # CHANGED: Removed Sigmoid.
+        
         
         d1 = self.Up1(d2)
         d1 = torch.cat((x1.to(device='cuda:0'),d1),dim=1)
         d1 = self.Up_conv1(d1)
         d1 = self.Conv_1x11(d1)
-        d1 = self.Sig(d1)
-
-        return d1.to(device='cuda:0')
+        # CHANGED: Removed self.Sig(d1). Returning logits directly for numerical stability with BCEWithLogitsLoss.
+        return [d1.to(device='cuda:0'), d2.to(device='cuda:0'), d3.to(device='cuda:0')]
     
     def __str__(self):
         num_params = sum(p.numel() for p in self.parameters())
